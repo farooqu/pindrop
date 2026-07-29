@@ -157,6 +157,29 @@ struct ModelManagerTests {
         #expect(AsrModels.modelsExist(at: modelDirectory, version: location.version))
     }
 
+    @Test func parakeetLegacyDirectoryMovesOnlyWhenCanonicalDirectoryIsAbsent() throws {
+        let downloadBase = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: downloadBase) }
+        let modelsDirectory = ParakeetModelStorage.modelsDirectory(in: downloadBase)
+
+        let legacyV3 = modelsDirectory.appendingPathComponent(Repo.parakeetV3.name)
+        try FileManager.default.createDirectory(at: legacyV3, withIntermediateDirectories: true)
+        let v3 = try #require(ParakeetModelStorage.location(
+            for: "parakeet-tdt-0.6b-v3",
+            in: downloadBase
+        ))
+        #expect(FileManager.default.fileExists(atPath: v3.directory.path))
+        #expect(!FileManager.default.fileExists(atPath: legacyV3.path))
+
+        let canonicalV2 = modelsDirectory.appendingPathComponent(Repo.parakeetV2.folderName)
+        let legacyV2 = modelsDirectory.appendingPathComponent(Repo.parakeetV2.name)
+        try FileManager.default.createDirectory(at: canonicalV2, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: legacyV2, withIntermediateDirectories: true)
+        _ = ParakeetModelStorage.location(for: "parakeet-tdt-0.6b-v2", in: downloadBase)
+        #expect(FileManager.default.fileExists(atPath: canonicalV2.path))
+        #expect(FileManager.default.fileExists(atPath: legacyV2.path))
+    }
+
     @Test func englishOnlyModelsWarnForNonEnglishSelection() throws {
         let model = try #require(modelManager.availableModels.first { $0.name == "openai_whisper-base.en" })
         #expect(model.supports(language: .english) == true)

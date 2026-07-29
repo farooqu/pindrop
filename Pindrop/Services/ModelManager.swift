@@ -26,13 +26,26 @@ enum ParakeetModelStorage {
             return nil
         }
 
-        return (
-            version,
-            modelsDirectory(in: downloadBase).appendingPathComponent(
-                repo.folderName,
-                isDirectory: true
-            )
+        let modelsDirectory = modelsDirectory(in: downloadBase)
+        let directory = modelsDirectory.appendingPathComponent(
+            repo.folderName,
+            isDirectory: true
         )
+        let legacyDirectory = modelsDirectory.appendingPathComponent(
+            repo.name,
+            isDirectory: true
+        )
+        if !FileManager.default.fileExists(atPath: directory.path),
+           FileManager.default.fileExists(atPath: legacyDirectory.path) {
+            do {
+                try FileManager.default.moveItem(at: legacyDirectory, to: directory)
+                Log.model.info("Migrated legacy Parakeet model to \(directory.path)")
+            } catch {
+                Log.model.error("Failed to migrate legacy Parakeet model: \(error.localizedDescription)")
+            }
+        }
+
+        return (version, directory)
     }
 
     static func modelsDirectory(in downloadBase: URL) -> URL {
