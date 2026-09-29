@@ -167,3 +167,15 @@ xcodebuild test -project Pindrop.xcodeproj -scheme Pindrop -destination 'platfor
 - When touching model or schema code, verify migration and read/write behavior
 - When adding or changing user-visible strings, update **both** Swift `localized(...)` keys and `Localizable.xcstrings` (and `InfoPlist.xcstrings` for permission / bundle strings) for all shipped locales
 
+<!-- fork:farooqu/pindrop — fork-only section; keep it at the end of the file and never send it upstream -->
+## Fork Workflow (farooqu/pindrop)
+
+This checkout is a fork of `watzon/pindrop`. Read `FORK.md` before creating a branch, committing, or opening a PR.
+
+- Default to upstream-bound changes: branch from `upstream/main`, name the branch `fix/…` or `feat/…`, keep one concern per branch, and include no fork-only files. Then open a PR to `watzon/pindrop` with `--repo watzon/pindrop --head farooqu:<branch>`, and merge the same branch into the fork's `main` with a merge commit.
+- Fork-only changes use `fork/…` branches based on `origin/main`. Keep them in fork-only files when possible.
+- `main` is consumed directly. Integrate upstream by merging `upstream/main`; never rebase or force-push `main`.
+- `gh` defaults to `farooqu/pindrop`. Upstream PRs must pass `--repo watzon/pindrop` explicitly.
+- Orbs cannot build this macOS app. Verify Swift changes with the fork's macOS GitHub Actions CI (push the branch, then run `gh run watch`) or on a Mac. Report unverified changes as unverified.
+- When asked to ship, follow the "Ship (Amp)" section of `FORK.md`.
+- Update the divergence ledger in `FORK.md` whenever `main` gains or drops a divergence from upstream.

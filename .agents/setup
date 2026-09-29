@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+# Amp orb setup for the farooqu/pindrop fork (fork-only file; never send upstream).
+#
+# Pindrop is a macOS app: orbs are Debian, so xcodebuild/swift builds are not
+# possible here. This prepares what *does* work in an orb (git fork workflow,
+# `just`, Python localization tooling). Build/test verification happens on the
+# fork's GitHub Actions macOS CI or a local Mac runner (see FORK.md).
+set -euo pipefail
+
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+
+UPSTREAM_URL="https://github.com/watzon/pindrop.git"
+JUST_VERSION="1.49.0" # keep in sync with .github/workflows/ci.yml
+SWIFT_VERSION="swift-6.2-RELEASE" # Swift shipped with CI's Xcode latest-stable
+SWIFT_BRANCH="swift-6.2-release"
+
+step() { printf '\n==> %s\n' "$*"; }
+timed() { local start=$SECONDS; "$@"; echo "    (${1}: $((SECONDS - start))s)"; }
+
+install_just() {
+  if command -v just >/dev/null 2>&1 && just --version | grep -Fq "just ${JUST_VERSION}"; then
+    echo "    just ${JUST_VERSION} already installed"
+    return
+  fi
+  local tmp
+  tmp="$(mktemp -d)"
+  curl -fsSL "https://github.com/casey/just/releases/download/${JUST_VERSION}/just-${JUST_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
+    | tar -xz -C "$tmp" just
+  sudo install -m 0755 "$tmp/just" /usr/local/bin/just
+  rm -rf "$tmp"
+  just --version
+}
+
+install_swift() {
+  # Linux Swift cannot build the app (AppKit/SwiftData/AVFoundation/os), but
+  # `swiftc -parse` gives agents a fast syntax check before the macOS CI loop.
+  local prefix="/opt/swift/${SWIFT_VERSION}"
+  if [[ -x "$prefix/usr/bin/swiftc" ]]; then
+    echo "    ${SWIFT_VERSION} already installed"
+  else
+    local tmp base url
+    tmp="$(mktemp -d)"
+    base="${SWIFT_VERSION}-debian12"
+    url="https://download.swift.org/${SWIFT_BRANCH}/debian12/${SWIFT_VERSION}/${base}.tar.gz"
+    curl -fsSL -o "$tmp/$base.tar.gz" "$url"
+    curl -fsSL -o "$tmp/$base.tar.gz.sig" "$url.sig"
+    export GNUPGHOME="$tmp/gnupg"
+    mkdir -m 700 "$GNUPGHOME"
+    curl -fsSL --compressed https://www.swift.org/keys/all-keys.asc | gpg --batch --quiet --import
+    gpg --batch --quiet --verify "$tmp/$base.tar.gz.sig" "$tmp/$base.tar.gz"
+    unset GNUPGHOME
+    sudo rm -rf "$prefix.partial"
+    sudo mkdir -p "$prefix.partial"
+    sudo tar -xzf "$tmp/$base.tar.gz" -C "$prefix.partial" --strip-components=1
+    sudo mv "$prefix.partial" "$prefix"
+    rm -rf "$tmp"
+  fi
+  # The driver picks its mode from argv[0], so the link must be named `swiftc`.
+  sudo ln -sfn "$prefix/usr/bin/swiftc" /usr/local/bin/swiftc
+  swiftc --version 2>&1 | head -1
+}
+
+configure_git() {
+  # Remotes: origin = fork (what we consume/push), upstream = watzon/pindrop.
+  if git remote get-url upstream >/dev/null 2>&1; then
+    git remote set-url upstream "$UPSTREAM_URL"
+  else
+    git remote add upstream "$UPSTREAM_URL"
+  fi
+  # Never push to upstream by accident; contributions go through PRs from the fork.
+  git remote set-url --push upstream DISABLED
+
+  # Make `gh` default to the fork, so `gh pr create` without --repo targets
+  # farooqu/pindrop. Upstream PRs must pass `--repo watzon/pindrop` explicitly.
+  git config remote.origin.gh-resolved base
+  git config --unset remote.upstream.gh-resolved 2>/dev/null || true
+
+  # Reuse recorded conflict resolutions across repeated upstream syncs/rebases.
+  git config rerere.enabled true
+  git config rerere.autoupdate true
+}
+
+fetch_history() {
+  # Full history is needed for merges/rebases between main, upstream/main, and
+  # contribution branches.
+  if [[ "$(git rev-parse --is-shallow-repository)" == "true" ]]; then
+    git fetch --quiet --unshallow origin
+  fi
+  git fetch --quiet --prune origin '+refs/heads/*:refs/remotes/origin/*'
+  git fetch --quiet --prune upstream '+refs/heads/*:refs/remotes/upstream/*'
+  echo "    main vs upstream/main (ahead behind): $(git rev-list --left-right --count origin/main...upstream/main)"
+}
+
+step "Installing just ${JUST_VERSION}"
+timed install_just
+
+step "Installing ${SWIFT_VERSION} (syntax checks only)"
+timed install_swift
+
+step "Configuring fork remotes"
+timed configure_git
+
+step "Fetching origin and upstream history"
+timed fetch_history
+
+step "Checking Python localization tooling"
+python3 --version
+
+echo
+echo "Setup complete."

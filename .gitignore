@@ -57,7 +57,12 @@ shared/
 .soulforge
 
 # Local agent / tooling state
-.agents/
+.agents/*
+# Fork: Amp orb lifecycle scripts are tracked (see FORK.md)
+!.agents/setup
+!.agents/resume
+.amp/portals/*
+.amp/in/
 .claude/
 
 # Node tooling (agent-ci etc.)
