@@ -904,11 +904,11 @@ public final class ModelManager {
             }
         }
         
+        // An interrupted download leaves a partial repo directory behind, so require
+        // the complete file set FluidAudio loads rather than the directory alone.
         for model in availableModels where model.provider == .parakeet {
             guard let version = try? parakeetVersion(forModelName: model.name) else { continue }
-            let repoDir = parakeetRepoDirectory(for: version)
-            var isDirectory: ObjCBool = false
-            if fileManager.fileExists(atPath: repoDir.path, isDirectory: &isDirectory), isDirectory.boolValue {
+            if AsrModels.modelsExist(at: parakeetRepoDirectory(for: version), version: version) {
                 downloaded.insert(model.name)
             }
         }
