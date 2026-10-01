@@ -196,14 +196,26 @@ be built in an orb.
    into your login Keychain with `codesign` access, and trusts it for code
    signing; macOS asks for your password. Build all releases with this one
    certificate so macOS keeps microphone and accessibility permissions across
-   updates. To build on another Mac, export it from Keychain Access as a `.p12`
-   and import it there.
+   updates.
 2. **Sparkle EdDSA key.** Run `just fork-sparkle-key`. It downloads Sparkle's
    tools, creates the key on first run, and prints the public key. The private
    key stays in your login Keychain. Put the public key in `SUPublicEDKey` in
    `Pindrop/Info.plist` and merge that through a `fork/…` branch.
    `just fork-release` refuses to run while that value is still upstream's key.
 3. **Tools:** `brew install just create-dmg gh`, then `gh auth login`.
+
+To release from a second Mac, copy both private keys once. iCloud Keychain
+only syncs items marked as synchronizable, and `security import` and
+`codesign` use the login keychain, so don't rely on it to share the identity.
+
+- **Certificate:** in Keychain Access → login → My Certificates, export
+  `Pindrop Fork` as a `.p12` with a password. On the other Mac, run
+  `security import Pindrop-Fork.p12 -k ~/Library/Keychains/login.keychain-db -T /usr/bin/codesign`.
+  Then open the certificate in Keychain Access → Trust and set Code Signing to
+  Always Trust.
+- **Sparkle key:** run `./bin/generate_keys -x sparkle-key.txt` on the first
+  Mac, then `./bin/generate_keys -f sparkle-key.txt` on the other.
+- Delete both export files afterwards. Store them only in a password manager.
 
 ### Publish a release
 
