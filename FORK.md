@@ -81,7 +81,9 @@ git switch -c fix/<topic> upstream/main
 # implement + verify (see Verification)
 git push -u origin fix/<topic>
 
-# 1) Upstream PR (explicit repo; gh defaults to the fork)
+# 1) Upstream PR (explicit repo; gh defaults to the fork). Needs a token that
+#    can write to watzon/pindrop; orbs can't. Otherwise open
+#    https://github.com/watzon/pindrop/compare/main...farooqu:pindrop:fix/<topic>
 gh pr create --repo watzon/pindrop --base main --head farooqu:fix/<topic> \
   --title "fix(<scope>): <summary>" --body "<why + what + how verified>"
 
@@ -148,11 +150,13 @@ upstreamable work with fork-only files. When a thread is shipped:
    push again. If Actions is off or CI can't run, stop and report that the
    change is unverified. Don't merge unverified Swift changes into `main`.
 4. **Open PRs.**
-   - Upstream-bound: open the upstream PR with `--repo watzon/pindrop --head
-     farooqu:<branch>`, or update the existing one. The body covers why, what,
-     and how it was verified, with no Amp or fork references. Then integrate it
-     through `fork/integrate-<topic>` with the ledger update, and merge that
-     with a merge commit after CI passes.
+   - Upstream-bound: integrate it through `fork/integrate-<topic>` with the
+     ledger update, and merge that with a merge commit once verified. The orb's
+     GitHub token only covers `farooqu/pindrop`, so `gh` can't create, comment
+     on, or close upstream PRs. Instead, give Umer the compare link
+     `https://github.com/watzon/pindrop/compare/main...farooqu:pindrop:<branch>`
+     with a ready-to-paste title and body. The body covers why, what, and how it
+     was verified, with no Amp or fork references.
    - Fork-only: open a PR to `farooqu/pindrop`, and merge it with a merge
      commit after CI passes. Update the ledger in the same PR when `main`'s
      divergence changes.
@@ -283,4 +287,5 @@ Keep this ledger current in the same PR that changes `main`'s divergence from
 | --- | --- | --- | --- |
 | `FORK.md`, `.agents/setup`, `.agents/resume`, `.gitignore` exceptions, `AGENTS.md` fork section | fork-only | n/a | yes |
 | Fork releases: `fork.just`, `import? 'fork.just'` at the end of `justfile`, `SUFeedURL` and `SUPublicEDKey` in `Pindrop/Info.plist` | fork-only | n/a | yes |
-| `fix/parakeet-cache-path` (load Parakeet from Pindrop's model cache) | contribution | [watzon/pindrop#87](https://github.com/watzon/pindrop/pull/87) open; conflicts with upstream's move of `ModelManager` into `Packages/PindropShared`, so it needs a rebase | no |
+| `fix/parakeet-cache-path` (load Parakeet from Pindrop's model cache) | contribution | Superseded by upstream [`14f20ef`](https://github.com/watzon/pindrop/commit/14f20ef) (on `main`, not yet released). Close [watzon/pindrop#87](https://github.com/watzon/pindrop/pull/87) with a comment, then delete the branch | no |
+| `fix/parakeet-model-detection` (report Parakeet as downloaded only when `AsrModels.modelsExist`) | contribution | Upstream PR not opened yet: [compare](https://github.com/watzon/pindrop/compare/main...farooqu:pindrop:fix/parakeet-model-detection) | yes |
