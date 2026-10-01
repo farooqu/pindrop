@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Amp orb resume for the farooqu/pindrop fork (fork-only file; never send upstream).
+# Refreshes upstream refs so agents compare against current upstream after a wake.
+set -euo pipefail
+
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+
+git remote get-url upstream >/dev/null 2>&1 \
+  || git remote add upstream https://github.com/watzon/pindrop.git
+
+if ! timeout 8 git fetch --quiet --prune upstream '+refs/heads/*:refs/remotes/upstream/*'; then
+  echo "warning: could not refresh upstream refs; run 'git fetch upstream' before syncing" >&2
+fi
