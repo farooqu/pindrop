@@ -644,3 +644,6 @@ dev: clean build test
 # CI workflow: shared package gates, unsigned app build/test, unsigned release build
 ci: clean test-shared build-shared-ios-all build-unsigned test-unsigned build-release-unsigned
     @echo "✅ CI workflow complete"
+
+# Fork-only recipes (farooqu/pindrop; never send upstream). See FORK.md.
+import? 'fork.just'

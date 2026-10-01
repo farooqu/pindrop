@@ -37,7 +37,7 @@
 	<key>SUEnableAutomaticChecks</key>
 	<true/>
 	<key>SUFeedURL</key>
-	<string>https://github.com/watzon/pindrop/releases/latest/download/appcast.xml</string>
+	<string>https://github.com/farooqu/pindrop/releases/latest/download/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>TCU0MwULuIK6y0ubIossVr+61PGh/wHZfFrRFc9F2Is=</string>
 </dict>

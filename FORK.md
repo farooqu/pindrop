@@ -181,22 +181,66 @@ AVFoundation, `os`) can't build there.
 Don't call a Swift change verified until macOS CI or a Mac build and test run
 passes.
 
-## Consuming `main`
+## Consuming `main`: fork releases and auto-updates
 
-Build on the Mac from an up-to-date `main`:
+Your Macs run fork releases published as GitHub releases on `farooqu/pindrop`.
+Each release is signed with your own code-signing certificate, which costs
+nothing. Sparkle installs updates from the fork's
+`releases/latest/download/appcast.xml`. Releases are built on one Mac and can't
+be built in an orb.
+
+### One-time setup (on the Mac that builds releases)
+
+1. **Code-signing certificate.** Open Keychain Access → Certificate Assistant
+   → Create a Certificate. Use the name `Pindrop Fork`, identity type
+   "Self-Signed Root", and certificate type "Code Signing". Build all releases
+   with this one certificate so macOS keeps microphone and accessibility
+   permissions across updates. To build on another Mac, export it as a `.p12`
+   and import it there.
+2. **Sparkle EdDSA key.** Run `just fork-sparkle-key`. It downloads Sparkle's
+   tools, creates the key on first run, and prints the public key. The private
+   key stays in your login Keychain. Put the public key in `SUPublicEDKey` in
+   `Pindrop/Info.plist` and merge that through a `fork/…` branch.
+   `just fork-release` refuses to run while that value is still upstream's key.
+3. **Tools:** `brew install just create-dmg gh`, then `gh auth login`.
+
+### Publish a release
 
 ```bash
 git switch main && git pull --ff-only
-just dmg-self-signed   # no Apple Developer team needed; or `just build` with your own team selected in Xcode
+just fork-release "Pindrop Fork"
 ```
 
-The project's `DEVELOPMENT_TEAM` belongs to upstream. Signed recipes need your
-own team selected in Xcode, and you shouldn't commit that change.
+`fork-release` (in `fork.just`, imported at the end of `justfile`) runs
+these steps:
 
-**Sparkle updates:** `Info.plist` points `SUFeedURL` at upstream's releases.
-Automatic updates would replace a fork build with upstream's release and drop
-fork changes. Turn off **Settings → General → Automatically check for updates**
-in the fork build.
+1. Checks that you're on a clean `main` that matches `origin/main`, the feed
+   and key point at the fork, and the certificate exists.
+2. Runs `just test-unsigned`.
+3. Builds Release with build number = commit count of `main`.
+4. Signs the app with the certificate.
+5. Creates the DMG and signs `appcast.xml` with the EdDSA key.
+6. Tags `v<upstream version>-fork.<build>`, pushes the tag, and publishes the
+   release as Latest.
+
+The release keeps upstream's marketing version and changes nothing in the Xcode
+project, so upstream merges stay conflict-free. The build number only grows
+because `main` is never rewritten.
+
+### Install on each Mac
+
+- First install: download the DMG from the fork's latest release. macOS blocks
+  it once because it isn't notarized. Allow it under System Settings → Privacy
+  & Security → Open Anyway, or run
+  `xattr -dr com.apple.quarantine /Applications/Pindrop.app`. Then grant
+  microphone and accessibility access.
+- After that, Sparkle offers new fork releases automatically. Upstream releases
+  aren't offered, because the feed and signing key are the fork's.
+
+### Local development builds
+
+`just build` uses upstream's `DEVELOPMENT_TEAM`. Select your own team in Xcode
+for local builds, and don't commit that change.
 
 ## Divergence ledger
 
@@ -206,4 +250,5 @@ Keep this ledger current in the same PR that changes `main`'s divergence from
 | Item | Kind | Upstream status | In `main`? |
 | --- | --- | --- | --- |
 | `FORK.md`, `.agents/setup`, `.agents/resume`, `.gitignore` exceptions, `AGENTS.md` fork section | fork-only | n/a | yes |
+| Fork releases: `fork.just`, `import? 'fork.just'` at the end of `justfile`, `SUFeedURL` and `SUPublicEDKey` in `Pindrop/Info.plist` | fork-only | n/a | yes |
 | `fix/parakeet-cache-path` (load Parakeet from Pindrop's model cache) | contribution | [watzon/pindrop#87](https://github.com/watzon/pindrop/pull/87) open; conflicts with upstream's move of `ModelManager` into `Packages/PindropShared`, so it needs a rebase | no |
