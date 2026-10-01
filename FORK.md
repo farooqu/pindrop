@@ -181,22 +181,98 @@ AVFoundation, `os`) can't build there.
 Don't call a Swift change verified until macOS CI or a Mac build and test run
 passes.
 
-## Consuming `main`
+## Consuming `main`: fork releases and auto-updates
 
-Build on the Mac from an up-to-date `main`:
+Your Macs run fork releases published as GitHub releases on `farooqu/pindrop`.
+Each release is signed with your own code-signing certificate, which costs
+nothing. Sparkle installs updates from the fork's
+`releases/latest/download/appcast.xml`.
+
+The work is split by machine. The release Mac (ITSO-WX2745, Amp runner
+`macbook`, checkout `~/personal/pindrop`) builds and signs; it has no `gh`. An
+orb, which has `gh`, publishes the release.
+
+### One-time setup (on the Mac that builds releases)
+
+1. **Code-signing certificate.** Run `just fork-signing-cert`. It generates a
+   self-signed `Pindrop Fork` code-signing certificate on your Mac, imports it
+   into your login Keychain with `codesign` access, and trusts it for code
+   signing; macOS asks for your password. Build all releases with this one
+   certificate so macOS keeps microphone and accessibility permissions across
+   updates.
+2. **Sparkle EdDSA key.** Run `just fork-sparkle-key`. It downloads Sparkle's
+   tools, creates the key on first run, and prints the public key. The private
+   key stays in your login Keychain. Put the public key in `SUPublicEDKey` in
+   `Pindrop/Info.plist` and merge that through a `fork/…` branch.
+   `just fork-build` refuses to run while that value is still upstream's key.
+3. **Tools:** `brew install just create-dmg`. Xcode 26 also needs
+   `xcodebuild -downloadComponent MetalToolchain` once (about 700 MB) to
+   compile the app's Metal shader.
+
+To release from a second Mac, copy both private keys once. iCloud Keychain
+only syncs items marked as synchronizable, and `security import` and
+`codesign` use the login keychain, so don't rely on it to share the identity.
+
+- **Certificate:** in Keychain Access → login → My Certificates, export
+  `Pindrop Fork` as a `.p12` with a password. On the other Mac, run
+  `security import Pindrop-Fork.p12 -k ~/Library/Keychains/login.keychain-db -T /usr/bin/codesign`.
+  Then open the certificate in Keychain Access → Trust and set Code Signing to
+  Always Trust.
+- **Sparkle key:** run `./bin/generate_keys -x sparkle-key.txt` on the first
+  Mac, then `./bin/generate_keys -f sparkle-key.txt` on the other.
+- Delete both export files afterwards. Store them only in a password manager.
+
+### Publish a release
+
+**1. On the Mac** (an Amp thread on runner `macbook`, or by hand):
 
 ```bash
+cd ~/personal/pindrop
 git switch main && git pull --ff-only
-just dmg-self-signed   # no Apple Developer team needed; or `just build` with your own team selected in Xcode
+just fork-build "Pindrop Fork"
 ```
 
-The project's `DEVELOPMENT_TEAM` belongs to upstream. Signed recipes need your
-own team selected in Xcode, and you shouldn't commit that change.
+`fork-build` (in `fork.just`, imported at the end of `justfile`) runs these
+steps:
 
-**Sparkle updates:** `Info.plist` points `SUFeedURL` at upstream's releases.
-Automatic updates would replace a fork build with upstream's release and drop
-fork changes. Turn off **Settings → General → Automatically check for updates**
-in the fork build.
+1. Checks that you're on a clean `main` that matches `origin/main`, the feed
+   and key point at the fork, and the certificate exists.
+2. Runs `just test-unsigned`.
+3. Builds Release, using the commit count of `main` as the build number.
+4. Signs the app with the certificate.
+5. Creates `dist/Pindrop.dmg`.
+6. Writes an EdDSA-signed `dist/appcast.xml` pointing at the tag
+   `v<upstream version>-fork.<build>`.
+7. Records the tag, version, build, commit, and DMG checksum in
+   `dist/fork-release.env`.
+
+**2. In an orb:** copy the three `dist/` files from the Mac thread into the
+orb checkout's `dist/` with `download_thread_file`, then run `just
+fork-publish`. It does the following:
+
+1. Verifies the DMG checksum and that the appcast matches the tag and build.
+2. Checks that the commit is on `origin/main` and the release doesn't exist
+   yet.
+3. Creates the GitHub release as Latest, with the tag created at that commit.
+
+The release keeps upstream's marketing version and changes nothing in the Xcode
+project, so upstream merges stay conflict-free. The build number only grows
+because `main` is never rewritten.
+
+### Install on each Mac
+
+- First install: download the DMG from the fork's latest release. macOS blocks
+  it once because it isn't notarized. Allow it under System Settings → Privacy
+  & Security → Open Anyway, or run
+  `xattr -dr com.apple.quarantine /Applications/Pindrop.app`. Then grant
+  microphone and accessibility access.
+- After that, Sparkle offers new fork releases automatically. Upstream releases
+  aren't offered, because the feed and signing key are the fork's.
+
+### Local development builds
+
+`just build` uses upstream's `DEVELOPMENT_TEAM`. Select your own team in Xcode
+for local builds, and don't commit that change.
 
 ## Divergence ledger
 
@@ -206,4 +282,5 @@ Keep this ledger current in the same PR that changes `main`'s divergence from
 | Item | Kind | Upstream status | In `main`? |
 | --- | --- | --- | --- |
 | `FORK.md`, `.agents/setup`, `.agents/resume`, `.gitignore` exceptions, `AGENTS.md` fork section | fork-only | n/a | yes |
+| Fork releases: `fork.just`, `import? 'fork.just'` at the end of `justfile`, `SUFeedURL` and `SUPublicEDKey` in `Pindrop/Info.plist` | fork-only | n/a | yes |
 | `fix/parakeet-cache-path` (load Parakeet from Pindrop's model cache) | contribution | [watzon/pindrop#87](https://github.com/watzon/pindrop/pull/87) open; conflicts with upstream's move of `ModelManager` into `Packages/PindropShared`, so it needs a rebase | no |
