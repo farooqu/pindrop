@@ -491,6 +491,35 @@ struct ModelManagerTests {
         }
     }
 
+    @Test func parakeetIsDownloadedOnlyWhenEveryModelFileIsPresent() async throws {
+        try await withManagerAsync { modelManager, root in
+            let repo = ParakeetEngine.modelDirectory(for: .v3, fluidAudioModelsRoot: root)
+
+            // An interrupted download leaves the repo directory with only some files,
+            // which must not be reported as installed.
+            try FileManager.default.createDirectory(
+                at: repo.appendingPathComponent(ModelNames.ASR.decoderFile, isDirectory: true),
+                withIntermediateDirectories: true
+            )
+            await modelManager.refreshDownloadedModels()
+            #expect(!modelManager.isModelDownloaded("parakeet-tdt-0.6b-v3"))
+
+            for file in ModelNames.ASR.requiredModelsV3() {
+                try FileManager.default.createDirectory(
+                    at: repo.appendingPathComponent(file, isDirectory: true),
+                    withIntermediateDirectories: true
+                )
+            }
+            FileManager.default.createFile(
+                atPath: repo.appendingPathComponent(ModelNames.ASR.vocabularyFile).path,
+                contents: Data("{}".utf8)
+            )
+            await modelManager.refreshDownloadedModels()
+            #expect(modelManager.isModelDownloaded("parakeet-tdt-0.6b-v3"))
+            #expect(!modelManager.isModelDownloaded("parakeet-tdt-0.6b-v2"))
+        }
+    }
+
     private func withManagerAsync<T>(
         _ body: (ModelManager, URL) async throws -> T
     ) async throws -> T {
