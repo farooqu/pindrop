@@ -205,7 +205,9 @@ orb, which has `gh`, publishes the release.
    key stays in your login Keychain. Put the public key in `SUPublicEDKey` in
    `Pindrop/Info.plist` and merge that through a `fork/…` branch.
    `just fork-build` refuses to run while that value is still upstream's key.
-3. **Tools:** `brew install just create-dmg`.
+3. **Tools:** `brew install just create-dmg`. Xcode 26 also needs
+   `xcodebuild -downloadComponent MetalToolchain` once (about 700 MB) to
+   compile the app's Metal shader.
 
 To release from a second Mac, copy both private keys once. iCloud Keychain
 only syncs items marked as synchronizable, and `security import` and
