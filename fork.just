@@ -51,9 +51,9 @@ _fork-sparkle-tools:
     done
     rm -rf "$TMP"
 
-# Usage: just fork-release "Pindrop Fork"
-# Build, sign with your own certificate, and publish a fork release that Sparkle updates from
-fork-release identity:
+# Usage (on the Mac): just fork-build "Pindrop Fork"
+# Test, build, sign, and package a fork release into dist/ (no gh needed; publish with fork-publish)
+fork-build identity:
     #!/usr/bin/env bash
     set -euo pipefail
 
@@ -64,12 +64,9 @@ fork-release identity:
 
     fail() { echo "❌ $*" >&2; exit 1; }
 
-    # Preflight: release only what main consumers get, with fork update settings.
-    for tool in gh create-dmg; do
-        command -v "$tool" >/dev/null 2>&1 || fail "Required tool not found: $tool"
-    done
-    gh auth status -h github.com >/dev/null 2>&1 || fail "GitHub CLI is not authenticated (gh auth login)."
-    [ "$(git branch --show-current)" = "main" ] || fail "Release from main."
+    # Preflight: build only what main consumers get, with fork update settings.
+    command -v create-dmg >/dev/null 2>&1 || fail "Required tool not found: create-dmg"
+    [ "$(git branch --show-current)" = "main" ] || fail "Build releases from main."
     if ! git diff --quiet || ! git diff --cached --quiet; then fail "Working tree has uncommitted changes."; fi
     git fetch --quiet origin main
     [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] || fail "Local main must match origin/main."
@@ -85,11 +82,9 @@ fork-release identity:
     # nothing in the Xcode project changes and upstream merges stay clean.
     VERSION=$(grep 'MARKETING_VERSION = ' {{xcode_project}}/project.pbxproj | head -1 | sed 's/.*= \(.*\);/\1/')
     BUILD=$(git rev-list --count HEAD)
+    COMMIT=$(git rev-parse HEAD)
     TAG="v${VERSION}-fork.${BUILD}"
-    if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
-        fail "Release ${TAG} already exists; merge a new commit to main first."
-    fi
-    echo "🚀 Releasing ${TAG} (Pindrop ${VERSION}, build ${BUILD}) to ${REPO}"
+    echo "🔨 Building ${TAG} (Pindrop ${VERSION}, build ${BUILD}, ${COMMIT})"
 
     echo "🧪 Running unit tests..."
     just test-unsigned
@@ -117,28 +112,73 @@ fork-release identity:
     UPDATES=$(mktemp -d)
     cp "$DMG" "$UPDATES/"
     ./bin/generate_appcast --download-url-prefix "https://github.com/${REPO}/releases/download/${TAG}/" "$UPDATES"
-    cp "$UPDATES/appcast.xml" appcast.xml
+    cp "$UPDATES/appcast.xml" {{dmg_dir}}/appcast.xml
     rm -rf "$UPDATES"
 
-    echo "🏷️  Tagging and publishing..."
-    PREV_TAG=$(git describe --tags --abbrev=0 --match 'v*-fork.*' 2>/dev/null || true)
+    printf '%s\n' "TAG=${TAG}" "VERSION=${VERSION}" "BUILD=${BUILD}" "COMMIT=${COMMIT}" \
+        "DMG_SHA256=$(shasum -a 256 "$DMG" | cut -d' ' -f1)" > {{dmg_dir}}/fork-release.env
+    echo "✅ Built ${TAG}. Artifacts:"
+    echo "   ${DMG}"
+    echo "   {{dmg_dir}}/appcast.xml"
+    echo "   {{dmg_dir}}/fork-release.env"
+    echo "   Publish them from a machine with gh: just fork-publish"
+
+# Publish the artifacts from fork-build (dist/Pindrop.dmg, dist/appcast.xml, dist/fork-release.env) as the latest fork release
+fork-publish:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    REPO="{{fork_repo}}"
+    DIST="{{dmg_dir}}"
+    DMG="${DIST}/{{app_name}}.dmg"
+    APPCAST="${DIST}/appcast.xml"
+    ENV_FILE="${DIST}/fork-release.env"
+
+    fail() { echo "❌ $*" >&2; exit 1; }
+
+    for f in "$DMG" "$APPCAST" "$ENV_FILE"; do [ -f "$f" ] || fail "Missing artifact: $f (run fork-build on the Mac and copy dist/ here)"; done
+    TAG=$(sed -n 's/^TAG=//p' "$ENV_FILE")
+    VERSION=$(sed -n 's/^VERSION=//p' "$ENV_FILE")
+    BUILD=$(sed -n 's/^BUILD=//p' "$ENV_FILE")
+    COMMIT=$(sed -n 's/^COMMIT=//p' "$ENV_FILE")
+    DMG_SHA256=$(sed -n 's/^DMG_SHA256=//p' "$ENV_FILE")
+    [ -n "$TAG" ] && [ -n "$VERSION" ] && [ -n "$BUILD" ] && [ -n "$COMMIT" ] && [ -n "$DMG_SHA256" ] \
+        || fail "Incomplete ${ENV_FILE}"
+
+    command -v gh >/dev/null 2>&1 || fail "Required tool not found: gh"
+    gh auth status -h github.com >/dev/null 2>&1 || fail "GitHub CLI is not authenticated (gh auth login)."
+
+    # The artifacts must be intact and match what fork-build signed.
+    if command -v sha256sum >/dev/null 2>&1; then ACTUAL=$(sha256sum "$DMG" | cut -d' ' -f1); else ACTUAL=$(shasum -a 256 "$DMG" | cut -d' ' -f1); fi
+    [ "$ACTUAL" = "$DMG_SHA256" ] || fail "DMG checksum mismatch (copied file is corrupt or from another build)."
+    grep -Fq "https://github.com/${REPO}/releases/download/${TAG}/{{app_name}}.dmg" "$APPCAST" \
+        || fail "appcast.xml does not point at ${TAG}'s DMG."
+    grep -Fq "<sparkle:version>${BUILD}</sparkle:version>" "$APPCAST" \
+        || fail "appcast.xml is not for build ${BUILD}."
+
+    # Release only commits that are on the fork's main, and never twice.
+    git fetch --quiet origin main --tags
+    git merge-base --is-ancestor "$COMMIT" origin/main || fail "${COMMIT} is not on origin/main."
+    if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then fail "Release ${TAG} already exists."; fi
+
+    PREV_TAG=$(git describe --tags --abbrev=0 --match 'v*-fork.*' "$COMMIT" 2>/dev/null || true)
     NOTES=$(mktemp)
     {
-        echo "Fork build of Pindrop ${VERSION} from \`main\` ($(git rev-parse --short HEAD))."
+        echo "Fork build of Pindrop ${VERSION} from \`main\` (${COMMIT:0:7})."
         echo "Fork changes vs. upstream: see the divergence ledger in FORK.md."
         if [ -n "$PREV_TAG" ]; then
             echo
             echo "## Changes since ${PREV_TAG}"
-            git log --first-parent --pretty='- %s' "${PREV_TAG}..HEAD"
+            git log --first-parent --pretty='- %s' "${PREV_TAG}..${COMMIT}"
         fi
     } > "$NOTES"
-    git tag -a "$TAG" -m "Fork release ${TAG}"
-    git push origin "$TAG"
-    gh release create "$TAG" "$DMG" appcast.xml \
+
+    echo "🚀 Publishing ${TAG} to ${REPO}..."
+    gh release create "$TAG" "$DMG" "$APPCAST" \
         --repo "$REPO" \
+        --target "$COMMIT" \
         --title "Pindrop ${VERSION} (fork build ${BUILD})" \
         --notes-file "$NOTES" \
         --latest
     rm -f "$NOTES"
-
     echo "✅ Published https://github.com/${REPO}/releases/tag/${TAG}"

@@ -186,8 +186,11 @@ passes.
 Your Macs run fork releases published as GitHub releases on `farooqu/pindrop`.
 Each release is signed with your own code-signing certificate, which costs
 nothing. Sparkle installs updates from the fork's
-`releases/latest/download/appcast.xml`. Releases are built on one Mac and can't
-be built in an orb.
+`releases/latest/download/appcast.xml`.
+
+The work is split by machine. The release Mac (ITSO-WX2745, Amp runner
+`macbook`, checkout `~/personal/pindrop`) builds and signs; it has no `gh`. An
+orb, which has `gh`, publishes the release.
 
 ### One-time setup (on the Mac that builds releases)
 
@@ -201,8 +204,8 @@ be built in an orb.
    tools, creates the key on first run, and prints the public key. The private
    key stays in your login Keychain. Put the public key in `SUPublicEDKey` in
    `Pindrop/Info.plist` and merge that through a `fork/…` branch.
-   `just fork-release` refuses to run while that value is still upstream's key.
-3. **Tools:** `brew install just create-dmg gh`, then `gh auth login`.
+   `just fork-build` refuses to run while that value is still upstream's key.
+3. **Tools:** `brew install just create-dmg`.
 
 To release from a second Mac, copy both private keys once. iCloud Keychain
 only syncs items marked as synchronizable, and `security import` and
@@ -219,22 +222,36 @@ only syncs items marked as synchronizable, and `security import` and
 
 ### Publish a release
 
+**1. On the Mac** (an Amp thread on runner `macbook`, or by hand):
+
 ```bash
+cd ~/personal/pindrop
 git switch main && git pull --ff-only
-just fork-release "Pindrop Fork"
+just fork-build "Pindrop Fork"
 ```
 
-`fork-release` (in `fork.just`, imported at the end of `justfile`) runs
-these steps:
+`fork-build` (in `fork.just`, imported at the end of `justfile`) runs these
+steps:
 
 1. Checks that you're on a clean `main` that matches `origin/main`, the feed
    and key point at the fork, and the certificate exists.
 2. Runs `just test-unsigned`.
-3. Builds Release with build number = commit count of `main`.
+3. Builds Release, using the commit count of `main` as the build number.
 4. Signs the app with the certificate.
-5. Creates the DMG and signs `appcast.xml` with the EdDSA key.
-6. Tags `v<upstream version>-fork.<build>`, pushes the tag, and publishes the
-   release as Latest.
+5. Creates `dist/Pindrop.dmg`.
+6. Writes an EdDSA-signed `dist/appcast.xml` pointing at the tag
+   `v<upstream version>-fork.<build>`.
+7. Records the tag, version, build, commit, and DMG checksum in
+   `dist/fork-release.env`.
+
+**2. In an orb:** copy the three `dist/` files from the Mac thread into the
+orb checkout's `dist/` with `download_thread_file`, then run `just
+fork-publish`. It does the following:
+
+1. Verifies the DMG checksum and that the appcast matches the tag and build.
+2. Checks that the commit is on `origin/main` and the release doesn't exist
+   yet.
+3. Creates the GitHub release as Latest, with the tag created at that commit.
 
 The release keeps upstream's marketing version and changes nothing in the Xcode
 project, so upstream merges stay conflict-free. The build number only grows

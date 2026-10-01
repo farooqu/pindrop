@@ -63,6 +63,8 @@ shared/
 !.agents/resume
 .amp/portals/*
 .amp/in/
+# Fork: Sparkle key tool downloaded by `just fork-sparkle-key`
+/bin/generate_keys
 .claude/
 
 # Node tooling (agent-ci etc.)
