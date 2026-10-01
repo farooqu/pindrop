@@ -4,6 +4,35 @@
 fork_repo := "farooqu/pindrop"
 upstream_ed_key := "TCU0MwULuIK6y0ubIossVr+61PGh/wHZfFrRFc9F2Is="
 
+# Generate a self-signed code-signing certificate and import it into your login Keychain (run once, on the Mac that releases)
+fork-signing-cert name="Pindrop Fork":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    NAME="{{name}}"
+    KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
+    if security find-identity -p codesigning | grep -Fq "\"${NAME}\""; then
+        echo "✅ Code signing identity already exists: ${NAME}"
+        exit 0
+    fi
+    TMP=$(mktemp -d)
+    trap 'rm -rf "$TMP"' EXIT
+    printf '%s\n' \
+        '[req]' 'distinguished_name = dn' 'prompt = no' 'x509_extensions = codesign' \
+        '[dn]' "CN = ${NAME}" \
+        '[codesign]' 'basicConstraints = critical, CA:false' 'keyUsage = critical, digitalSignature' \
+        'extendedKeyUsage = critical, codeSigning' 'subjectKeyIdentifier = hash' > "$TMP/cfg"
+    # macOS's /usr/bin/openssl (LibreSSL); legacy PKCS#12 algorithms so Keychain can import it.
+    /usr/bin/openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -config "$TMP/cfg" \
+        -keyout "$TMP/key.pem" -out "$TMP/cert.pem" 2>/dev/null
+    PASS=$(/usr/bin/openssl rand -hex 16)
+    /usr/bin/openssl pkcs12 -export -inkey "$TMP/key.pem" -in "$TMP/cert.pem" -name "$NAME" \
+        -certpbe PBE-SHA1-3DES -keypbe PBE-SHA1-3DES -macalg sha1 -passout "pass:${PASS}" -out "$TMP/id.p12"
+    security import "$TMP/id.p12" -k "$KEYCHAIN" -P "$PASS" -T /usr/bin/codesign
+    echo "🔐 Trusting the certificate for code signing (macOS asks for your password)..."
+    security add-trusted-cert -r trustRoot -p codeSign -k "$KEYCHAIN" "$TMP/cert.pem"
+    security find-identity -p codesigning | grep -F "\"${NAME}\""
+    echo "✅ Imported '${NAME}'. Back it up from Keychain Access (export as .p12) if you may build on another Mac."
+
 # Create (first run) or print the Sparkle EdDSA public key for SUPublicEDKey; the private key stays in your Keychain
 fork-sparkle-key: _fork-sparkle-tools
     ./bin/generate_keys

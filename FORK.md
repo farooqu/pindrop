@@ -191,11 +191,12 @@ be built in an orb.
 
 ### One-time setup (on the Mac that builds releases)
 
-1. **Code-signing certificate.** Open Keychain Access → Certificate Assistant
-   → Create a Certificate. Use the name `Pindrop Fork`, identity type
-   "Self-Signed Root", and certificate type "Code Signing". Build all releases
-   with this one certificate so macOS keeps microphone and accessibility
-   permissions across updates. To build on another Mac, export it as a `.p12`
+1. **Code-signing certificate.** Run `just fork-signing-cert`. It generates a
+   self-signed `Pindrop Fork` code-signing certificate on your Mac, imports it
+   into your login Keychain with `codesign` access, and trusts it for code
+   signing; macOS asks for your password. Build all releases with this one
+   certificate so macOS keeps microphone and accessibility permissions across
+   updates. To build on another Mac, export it from Keychain Access as a `.p12`
    and import it there.
 2. **Sparkle EdDSA key.** Run `just fork-sparkle-key`. It downloads Sparkle's
    tools, creates the key on first run, and prints the public key. The private
